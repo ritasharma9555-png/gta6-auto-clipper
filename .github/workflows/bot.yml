@@ -1,0 +1,20 @@
+name: GTA 6 Clipper Bot
+
+on:
+  workflow_dispatch: # Isse hum manually button daba kar bot chala payenge
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest # GitHub ka free cloud server (Linux)
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Run Python Script
+        run: python main.py
