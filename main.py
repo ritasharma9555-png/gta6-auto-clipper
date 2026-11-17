@@ -7,5 +7,5 @@ def download_and_clip():
     # Abhi ke liye test print kar rahe hain
     print("Cloud server is ready and running successfully!")
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     download_and_clip()
