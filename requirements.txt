@@ -1,0 +1,7 @@
+google-api-python-client
+google-auth-oauthlib
+google-genai
+instagrapi[video]
+moviepy==2.2.1
+pillow
+yt-dlp

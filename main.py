@@ -1,25 +1,76 @@
 import os
 import subprocess
+import urllib.request
+from ai_brain import generate_metadata
+from upload_youtube import upload_video
+from upload_insta import upload_reel
 
-def process_gta_clips():
-    print("GTA 6 Auto-Clipper Pipeline Started...")
-    
-    # Test ke liye ek sample video link (Aage ise live YouTube stream ya playlist se connect kar lenge)
-    video_url = "https://www.youtube.com/watch?v=QdBZY2fkU-0"
-    
-    print(f"Downloading video: {video_url}")
-    # yt-dlp se best quality video download karne ki command
-    download_cmd = f"yt-dlp -f best -o 'input_video.mp4' {video_url}"
-    subprocess.run(download_cmd, shell=True)
-    
-    print("Video downloaded! Now cutting into 9:16 short clip using FFmpeg...")
-    
-    # FFmpeg command: 5th second se 20th second tak ka clip cut karega (As a test)
-    # 9:16 vertical crop aur cutting logic yahan add ho raha hai
-    clip_cmd = "ffmpeg -i input_video.mp4 -ss 00:00:05 -to 00:00:20 -c:v copy -c:a copy output_short.mp4"
-    subprocess.run(clip_cmd, shell=True)
-    
-    print("Short clip generated successfully: output_short.mp4!")
+NTFY_TOPIC = "haf_spidy"  # Apna unique ntfy topic naam yahan daal
+
+def send_notification(title, message):
+    try:
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            data=message.encode("utf-8"),
+            headers={"Title": title, "Tags": "fire,video_game"}
+        )
+        urllib.request.urlopen(req)
+        print("🔔 Phone par notification bhej diya!")
+    except Exception as e:
+        print(f"⚠️ Notification error: {e}")
+
+def create_clip():
+    raw_file = "raw.mp4"
+    final_file = "final_short.mp4"
+
+    for f in [raw_file, final_file]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    print("🔍 Latest GTA 6 gameplay clip dhundh raha hai...")
+    title_cmd = ["yt-dlp", "--get-title", "ytsearch1:GTA 6 gameplay clip"]
+    source_title = subprocess.check_output(title_cmd, text=True).strip()
+
+    yt_cmd = [
+        "yt-dlp",
+        "ytsearch1:GTA 6 gameplay clip",
+        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "--download-sections", "*0:10-0:40",
+        "-o", raw_file
+    ]
+    subprocess.run(yt_cmd, check=True)
+
+    print("✂️ Video ko 9:16 Vertical (Shorts/Reels) me crop kar raha hai...")
+    ffmpeg_cmd = [
+        "ffmpeg", "-y", "-i", raw_file,
+        "-vf", "crop=ih*9/16:ih,scale=1080:1920",
+        "-c:v", "libx264", "-preset", "fast", "-c:a", "aac",
+        final_file
+    ]
+    subprocess.run(ffmpeg_cmd, check=True)
+    return final_file, source_title
 
 if __name__ == "__main__":
-    process_gta_clips()
+    video, source_title = create_clip()
+
+    print("🧠 AI Brain se viral Title aur Caption banwa raha hai...")
+    meta = generate_metadata(source_title)
+
+    # 1. YouTube Shorts par upload
+    upload_video(
+        video,
+        title=meta["yt_title"],
+        description=meta["insta_caption"],
+        tags=meta["tags"],
+        privacy="public"
+    )
+
+    # 2. Instagram Reels par upload
+    upload_reel(video, caption=meta["insta_caption"])
+
+    # 3. Phone par Notification bhej
+    send_notification(
+        "GTA 6 Bot Upload Done!",
+        f"Title: {meta['yt_title']}\nYouTube Shorts + Instagram Reels dono live ho gaye!"
+    )
+    print("🎉 Mission Complete!")
