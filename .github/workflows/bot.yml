@@ -1,20 +1,40 @@
-name: GTA 6 Clipper Bot
+name: GTA 6 Auto Clipper Bot
 
 on:
-  workflow_dispatch: # Isse hum manually button daba kar bot chala payenge
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   run-bot:
-    runs-on: ubuntu-latest # GitHub ka free cloud server (Linux)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: Run Python Script
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python Libraries
+        run: |
+          pip install -r requirements.txt
+          pip install --no-deps "moviepy==2.2.1"
+
+      - name: Load Secrets
+        env:
+          YT_TOKEN: ${{ secrets.YT_TOKEN }}
+          INSTA_SESSION: ${{ secrets.INSTA_SESSION }}
+        run: |
+          echo "$YT_TOKEN" > token.json
+          echo "$INSTA_SESSION" > insta_session.json
+
+      - name: Run Bot
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
