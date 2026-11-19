@@ -27,19 +27,18 @@ def create_clip():
         if os.path.exists(f):
             os.remove(f)
 
-    cookie_args = []
+    base_cmd = ["yt-dlp", "--js-runtimes", "node", "--remote-components", "ejs:github"]
     if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
-        cookie_args = ["--cookies", "cookies.txt"]
+        base_cmd += ["--cookies", "cookies.txt"]
 
     print("🔍 Latest GTA 6 gameplay clip dhundh raha hai...")
-    title_cmd = ["yt-dlp", *cookie_args, "--get-title", "ytsearch1:GTA 6 gameplay clip"]
+    title_cmd = [*base_cmd, "--get-title", "ytsearch1:GTA 6 gameplay clip"]
     source_title = subprocess.check_output(title_cmd, text=True).strip()
 
     yt_cmd = [
-        "yt-dlp",
-        *cookie_args,
+        *base_cmd,
         "ytsearch1:GTA 6 gameplay clip",
-        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "--download-sections", "*0:10-0:40",
         "-o", raw_file
     ]
