@@ -42,9 +42,6 @@ def format_sec(seconds):
     return f"{h}:{m:02d}:{s:02d}"
 
 def find_hype_window(base_cmd, query):
-    """
-    Returns (video_url, title, start_sec, end_sec, reason)
-    """
     search_target = f"ytsearch5:{query}"
     cmd = [*base_cmd, "--no-playlist", "--dump-json", search_target]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
@@ -79,7 +76,6 @@ def find_hype_window(base_cmd, query):
             if end_sec - start_sec >= 15:
                 return webpage_url, title, start_sec, end_sec, f"Most Replayed peak @ {peak_time:.1f}s"
 
-        # Fallback: skip intro, pick hyped mid-action segment
         start_sec = max(15, int(duration * 0.30))
         if start_sec + 30 > duration:
             start_sec = max(0, int(duration) - 30)
@@ -129,14 +125,20 @@ def create_clip():
             if not os.path.exists(raw_file) or os.path.getsize(raw_file) == 0:
                 continue
 
-            print("✂️ 9:16 Vertical (Shorts/Reels) me crop kar raha hai...")
-            vf_filter = "crop=trunc(ih*9/16/2)*2:trunc(ih/2)*2,scale=1080:1920:flags=bilinear"
+            print("✂️ Bina over-zoom ke 9:16 Vertical (Blurred BG + Full Frame) bana raha hai...")
+            filter_complex = (
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+                "crop=1080:1920,boxblur=20:5,eq=brightness=-0.12[bg];"
+                "[0:v]scale=1080:608:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[vout]"
+            )
 
             if has_audio_stream(raw_file):
                 ffmpeg_cmd = [
                     "ffmpeg", "-y",
                     "-i", raw_file,
-                    "-vf", vf_filter,
+                    "-filter_complex", filter_complex,
+                    "-map", "[vout]", "-map", "0:a?",
                     "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
                     "-c:a", "aac", "-b:a", "128k",
                     "-movflags", "+faststart",
@@ -147,7 +149,8 @@ def create_clip():
                     "ffmpeg", "-y",
                     "-i", raw_file,
                     "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-                    "-vf", vf_filter,
+                    "-filter_complex", filter_complex,
+                    "-map", "[vout]", "-map", "1:a",
                     "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
                     "-c:a", "aac", "-b:a", "128k",
                     "-shortest",
