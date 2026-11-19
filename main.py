@@ -19,6 +19,23 @@ def send_notification(title, message):
     except Exception as e:
         print(f"⚠️ Notification error: {e}")
 
+def download_from_query(base_cmd, query, raw_file):
+    title_cmd = [*base_cmd, "--no-playlist", "--get-title", f"ytsearch1:{query}"]
+    source_title = subprocess.check_output(title_cmd, text=True).strip()
+
+    yt_cmd = [
+        *base_cmd,
+        "--no-playlist",
+        f"ytsearch1:{query}",
+        "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[ext=mp4]/best",
+        "--merge-output-format", "mp4",
+        "--download-sections", "*0:15-0:45",
+        "--force-keyframes-at-cuts",
+        "-o", raw_file
+    ]
+    subprocess.run(yt_cmd, check=True)
+    return source_title
+
 def create_clip():
     raw_file = "raw.mp4"
     final_file = "final_short.mp4"
@@ -31,24 +48,30 @@ def create_clip():
     if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
         base_cmd += ["--cookies", "cookies.txt"]
 
-    print("🔍 Latest GTA 6 gameplay clip dhundh raha hai...")
-    title_cmd = [*base_cmd, "--get-title", "ytsearch1:GTA 6 gameplay clip"]
-    source_title = subprocess.check_output(title_cmd, text=True).strip()
+    queries = ["IShowSpeed GTA 6", "GTA 6 gameplay clip"]
+    source_title = None
 
-    yt_cmd = [
-        *base_cmd,
-        "ytsearch1:GTA 6 gameplay clip",
-        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "--download-sections", "*0:10-0:40",
-        "-o", raw_file
-    ]
-    subprocess.run(yt_cmd, check=True)
+    for q in queries:
+        try:
+            print(f"🔍 '{q}' ke liye clip dhundh aur download kar raha hai...")
+            if os.path.exists(raw_file):
+                os.remove(raw_file)
+            source_title = download_from_query(base_cmd, q, raw_file)
+            if os.path.exists(raw_file) and os.path.getsize(raw_file) > 0:
+                break
+        except Exception as e:
+            print(f"⚠️ '{q}' par issue aaya ({e}), next option try kar raha hai...")
 
-    print("✂️ Video ko 9:16 Vertical (Shorts/Reels) me crop kar raha hai...")
+    if not source_title or not os.path.exists(raw_file):
+        raise RuntimeError("Kisi bhi query se video download nahi ho paya.")
+
+    print("✂️ High quality 9:16 Vertical (Shorts/Reels) me crop kar raha hai...")
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-i", raw_file,
-        "-vf", "crop=ih*9/16:ih,scale=1080:1920",
-        "-c:v", "libx264", "-preset", "fast", "-c:a", "aac",
+        "-vf", "crop=ih*9/16:ih,scale=1080:1920:flags=lanczos",
+        "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
         final_file
     ]
     subprocess.run(ffmpeg_cmd, check=True)
