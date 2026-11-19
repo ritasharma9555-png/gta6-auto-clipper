@@ -32,9 +32,11 @@ jobs:
         env:
           YT_TOKEN: ${{ secrets.YT_TOKEN }}
           INSTA_SESSION: ${{ secrets.INSTA_SESSION }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: |
           echo "$YT_TOKEN" > token.json
           echo "$INSTA_SESSION" > insta_session.json
+          echo "$YT_COOKIES" > cookies.txt
 
       - name: Run Bot
         env:
