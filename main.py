@@ -8,6 +8,7 @@ from upload_insta import upload_reel
 
 NTFY_TOPIC = "haf_spidy"  # Apna unique ntfy topic naam yahan daal
 
+
 def send_notification(title, message):
     try:
         req = urllib.request.Request(
@@ -15,10 +16,11 @@ def send_notification(title, message):
             data=message.encode("utf-8"),
             headers={"Title": title, "Tags": "fire,video_game"}
         )
-        urllib.request.urlopen(req)
+        urllib.request.urlopen(req, timeout=15)
         print("🔔 Phone par notification bhej diya!")
     except Exception as e:
         print(f"⚠️ Notification error: {e}")
+
 
 def has_audio_stream(filepath):
     probe = subprocess.run(
@@ -34,12 +36,26 @@ def has_audio_stream(filepath):
     )
     return bool(probe.stdout.strip())
 
+
 def format_sec(seconds):
     seconds = max(0, int(seconds))
     h = seconds // 3600
     m = (seconds % 3600) // 60
     s = seconds % 60
     return f"{h}:{m:02d}:{s:02d}"
+
+
+def build_base_cmd(use_cookies=True):
+    cmd = [
+        "yt-dlp",
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
+        "--extractor-args", "youtube:player_client=tv,web_safari,android"
+    ]
+    if use_cookies and os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
+        cmd += ["--cookies", "cookies.txt"]
+    return cmd
+
 
 def find_hype_window(base_cmd, query):
     search_target = f"ytsearch8:{query}"
@@ -61,7 +77,11 @@ def find_hype_window(base_cmd, query):
             continue
 
         vid_id = info.get("id")
-        webpage_url = info.get("webpage_url") or info.get("url") or (f"https://www.youtube.com/watch?v={vid_id}" if vid_id else None)
+        webpage_url = (
+            info.get("webpage_url")
+            or info.get("url")
+            or (f"https://www.youtube.com/watch?v={vid_id}" if vid_id else None)
+        )
         title = info.get("title") or query
         if not webpage_url:
             continue
@@ -70,13 +90,17 @@ def find_hype_window(base_cmd, query):
         if fallback_candidate is None:
             fallback_candidate = (webpage_url, title, 15, 45, "Default hype window (15s-45s)")
 
-        if duration > 0 and duration < 45:
+        if 0 < duration < 45:
             continue
 
         heatmap = info.get("heatmap")
         if isinstance(heatmap, list) and len(heatmap) > 0:
             best_pt = max(heatmap, key=lambda x: float(x.get("value") or 0))
-            peak_time = float(best_pt.get("start_time") or best_pt.get("end_time") or (duration * 0.35 if duration else 20))
+            peak_time = float(
+                best_pt.get("start_time")
+                or best_pt.get("end_time")
+                or (duration * 0.35 if duration else 20)
+            )
             start_sec = max(0, int(peak_time - 5))
             end_sec = min(int(duration), start_sec + 30) if duration > 0 else start_sec + 30
             if end_sec - start_sec >= 15:
@@ -94,24 +118,50 @@ def find_hype_window(base_cmd, query):
 
     raise RuntimeError(f"'{query}' ke liye suitable recorded video nahi mila.")
 
-def create_clip():
-    raw_file = "raw.mp4"
-    final_file = "final_short.mp4"
 
-    for f in [raw_file, final_file]:
-        if os.path.exists(f):
-            os.remove(f)
+def render_vertical_clip(raw_file, final_file):
+    filter_complex = (
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=20:5,eq=brightness=-0.12[bg];"
+        "[0:v]scale=1080:608:force_original_aspect_ratio=decrease[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[vout]"
+    )
 
-    base_cmd = ["yt-dlp", "--js-runtimes", "node", "--remote-components", "ejs:github"]
-    if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
-        base_cmd += ["--cookies", "cookies.txt"]
+    if has_audio_stream(raw_file):
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", raw_file,
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "0:a?",
+            "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            final_file
+        ]
+    else:
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", raw_file,
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "1:a",
+            "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
+            "-c:a", "aac", "-b:a", "128k",
+            "-shortest",
+            "-movflags", "+faststart",
+            final_file
+        ]
 
-    queries = ["IShowSpeed GTA 6 gameplay", "GTA 6 gameplay", "IShowSpeed GTA 6", "GTA 6"]
-    source_title = None
+    subprocess.run(ffmpeg_cmd, check=True, timeout=120)
+
+
+def try_queries_with_mode(queries, use_cookies, raw_file, final_file):
+    mode_label = "cookies.txt" if use_cookies else "no-cookie fallback"
+    base_cmd = build_base_cmd(use_cookies=use_cookies)
 
     for q in queries:
         try:
-            print(f"🔍 '{q}' me hyped/most-replayed scene dhundh raha hai...")
+            print(f"🔍 [{mode_label}] '{q}' me hyped/most-replayed scene dhundh raha hai...")
             for f in [raw_file, final_file]:
                 if os.path.exists(f):
                     os.remove(f)
@@ -136,48 +186,34 @@ def create_clip():
                 continue
 
             print("✂️ Bina over-zoom ke 9:16 Vertical (Blurred BG + Full Frame) bana raha hai...")
-            filter_complex = (
-                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-                "crop=1080:1920,boxblur=20:5,eq=brightness=-0.12[bg];"
-                "[0:v]scale=1080:608:force_original_aspect_ratio=decrease[fg];"
-                "[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[vout]"
-            )
+            render_vertical_clip(raw_file, final_file)
 
-            if has_audio_stream(raw_file):
-                ffmpeg_cmd = [
-                    "ffmpeg", "-y",
-                    "-i", raw_file,
-                    "-filter_complex", filter_complex,
-                    "-map", "[vout]", "-map", "0:a?",
-                    "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
-                    "-c:a", "aac", "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    final_file
-                ]
-            else:
-                ffmpeg_cmd = [
-                    "ffmpeg", "-y",
-                    "-i", raw_file,
-                    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-                    "-filter_complex", filter_complex,
-                    "-map", "[vout]", "-map", "1:a",
-                    "-c:v", "libx264", "-crf", "22", "-preset", "ultrafast",
-                    "-c:a", "aac", "-b:a", "128k",
-                    "-shortest",
-                    "-movflags", "+faststart",
-                    final_file
-                ]
-
-            subprocess.run(ffmpeg_cmd, check=True, timeout=120)
             if os.path.exists(final_file) and os.path.getsize(final_file) > 10000:
-                break
+                return final_file, source_title
         except Exception as e:
-            print(f"⚠️ '{q}' par issue aaya ({e}), next query try kar raha hai...")
+            print(f"⚠️ [{mode_label}] '{q}' par issue aaya ({e}), next query try kar raha hai...")
 
-    if not source_title or not os.path.exists(final_file) or os.path.getsize(final_file) <= 10000:
-        raise RuntimeError("Hype scene clip nahi ban paya.")
+    return None, None
 
-    return final_file, source_title
+
+def create_clip():
+    raw_file = "raw.mp4"
+    final_file = "final_short.mp4"
+    queries = ["IShowSpeed GTA 6 gameplay", "GTA 6 gameplay", "IShowSpeed GTA 6", "GTA 6"]
+
+    has_cookie_file = os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0
+    if has_cookie_file:
+        video, source_title = try_queries_with_mode(queries, True, raw_file, final_file)
+        if video and source_title:
+            return video, source_title
+        print("🍪 Cookies se kaam nahi bana, ab bina cookie ke fallback try kar raha hai...")
+
+    video, source_title = try_queries_with_mode(queries, False, raw_file, final_file)
+    if video and source_title:
+        return video, source_title
+
+    raise RuntimeError("Hype scene clip nahi ban paya (cookies aur no-cookie fallback dono try ho gaye).")
+
 
 if __name__ == "__main__":
     video, source_title = create_clip()
