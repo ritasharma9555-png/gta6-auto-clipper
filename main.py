@@ -42,9 +42,11 @@ def format_sec(seconds):
     return f"{h}:{m:02d}:{s:02d}"
 
 def find_hype_window(base_cmd, query):
-    search_target = f"ytsearch5:{query}"
-    cmd = [*base_cmd, "--no-playlist", "--dump-json", search_target]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+    search_target = f"ytsearch8:{query}"
+    cmd = [*base_cmd, "--no-playlist", "--flat-playlist", "--dump-json", search_target]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+    fallback_candidate = None
 
     for line in proc.stdout.splitlines():
         line = line.strip()
@@ -58,29 +60,37 @@ def find_hype_window(base_cmd, query):
         if info.get("is_live"):
             continue
 
-        duration = float(info.get("duration") or 0)
-        if duration < 45:
-            continue
-
-        webpage_url = info.get("webpage_url") or info.get("url")
+        vid_id = info.get("id")
+        webpage_url = info.get("webpage_url") or info.get("url") or (f"https://www.youtube.com/watch?v={vid_id}" if vid_id else None)
         title = info.get("title") or query
         if not webpage_url:
+            continue
+
+        duration = float(info.get("duration") or 0)
+        if fallback_candidate is None:
+            fallback_candidate = (webpage_url, title, 15, 45, "Default hype window (15s-45s)")
+
+        if duration > 0 and duration < 45:
             continue
 
         heatmap = info.get("heatmap")
         if isinstance(heatmap, list) and len(heatmap) > 0:
             best_pt = max(heatmap, key=lambda x: float(x.get("value") or 0))
-            peak_time = float(best_pt.get("start_time") or best_pt.get("end_time") or duration * 0.35)
+            peak_time = float(best_pt.get("start_time") or best_pt.get("end_time") or (duration * 0.35 if duration else 20))
             start_sec = max(0, int(peak_time - 5))
-            end_sec = min(int(duration), start_sec + 30)
+            end_sec = min(int(duration), start_sec + 30) if duration > 0 else start_sec + 30
             if end_sec - start_sec >= 15:
                 return webpage_url, title, start_sec, end_sec, f"Most Replayed peak @ {peak_time:.1f}s"
 
-        start_sec = max(15, int(duration * 0.30))
-        if start_sec + 30 > duration:
-            start_sec = max(0, int(duration) - 30)
-        end_sec = min(int(duration), start_sec + 30)
-        return webpage_url, title, start_sec, end_sec, f"Mid-action window ({start_sec}s-{end_sec}s)"
+        if duration >= 45:
+            start_sec = max(15, int(duration * 0.30))
+            if start_sec + 30 > duration:
+                start_sec = max(0, int(duration) - 30)
+            end_sec = min(int(duration), start_sec + 30)
+            return webpage_url, title, start_sec, end_sec, f"Mid-action window ({start_sec}s-{end_sec}s)"
+
+    if fallback_candidate:
+        return fallback_candidate
 
     raise RuntimeError(f"'{query}' ke liye suitable recorded video nahi mila.")
 
@@ -96,7 +106,7 @@ def create_clip():
     if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
         base_cmd += ["--cookies", "cookies.txt"]
 
-    queries = ["IShowSpeed GTA 6 gameplay", "GTA 6 gameplay"]
+    queries = ["IShowSpeed GTA 6 gameplay", "GTA 6 gameplay", "IShowSpeed GTA 6", "GTA 6"]
     source_title = None
 
     for q in queries:
